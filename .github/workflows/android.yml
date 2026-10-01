@@ -22,10 +22,15 @@ jobs:
     - name: Setup Gradle Wrapper if missing
       run: |
         if [ ! -f "gradlew" ]; then
-          echo "gradlew not found, generating wrapper..."
           gradle wrapper
         fi
         chmod +x gradlew
 
-    - name: Build with Gradle
+    - name: Build Debug APK
       run: ./gradlew assembleDebug
+
+    - name: Upload APK File
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug
+        path: app/build/outputs/apk/debug/*.apk
