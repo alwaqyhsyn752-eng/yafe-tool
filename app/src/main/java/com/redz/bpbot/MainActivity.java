@@ -15,14 +15,13 @@ import com.redz.bpbot.service.OverlayService;
 
 public final class MainActivity extends Activity {
 
-    private static final int REQ_OVERLAY  = 1001;
-    private static final int REQ_CAPTURE  = 1002;
     private static final int REQ_OVERLAY = 1001;
     private static final int REQ_CAPTURE = 1002;
 
     private MediaProjectionManager projectionMgr;
 
-    @Override protected void onCreate(Bundle s) {
+    @Override
+    protected void onCreate(Bundle s) {
         super.onCreate(s);
         projectionMgr = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
 
@@ -45,7 +44,6 @@ public final class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
             askOverlayPermission();
         }
-        if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) askOverlayPermission();
     }
 
     private void askOverlayPermission() {
@@ -59,19 +57,13 @@ public final class MainActivity extends Activity {
     }
 
     private void askCapturePermission() {
-        if (projectionMgr == null) return;
-        startActivityForResult(projectionMgr.createScreenCaptureIntent(), REQ_CAPTURE);
-            startActivityForResult(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:" + getPackageName())), REQ_OVERLAY);
-        } else Toast.makeText(this, "Overlay already granted", Toast.LENGTH_SHORT).show();
-    }
-
-    private void askCapturePermission() {
-        if (projectionMgr != null)
+        if (projectionMgr != null) {
             startActivityForResult(projectionMgr.createScreenCaptureIntent(), REQ_CAPTURE);
+        }
     }
 
-    @Override protected void onActivityResult(int req, int res, Intent data) {
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
         if (req == REQ_CAPTURE && res == RESULT_OK && data != null) {
             Intent svc = new Intent(this, OverlayService.class);
