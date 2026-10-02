@@ -77,16 +77,11 @@ public final class PhysicsEngine {
         return tr;
     }
 
-    /**
-     * يشعّ N شعاع من نقطة البداية بكل الاتجاهات.
-     * يحتفظ فقط بالشعاعات التي تصل جيباً، مع منع التكرار.
-     */
     public static List<Trace> raycastAll(PointF start, RectF bounds,
                                          List<PointF> pockets,
                                          float ballR, float pocketR,
                                          int rayCount, int maxBounces) {
         List<Trace> results = new ArrayList<>();
-        // لتتبّع الجيوب التي تم الوصول إليها ومنع التكرار القبيح
         boolean[] pocketHit = new boolean[pockets.size()];
         float angularStep = (float) (2 * Math.PI / rayCount);
 
@@ -97,7 +92,6 @@ public final class PhysicsEngine {
             Trace tr = trace(start, dx, dy, bounds, pockets,
                     ballR, pocketR, maxBounces);
             if (tr.reached) {
-                // احتفظ بالشعاع إذا كان بانكه صغيراً، أو الجيب جديد
                 if (tr.bounces <= 1 || !pocketHit[tr.pocketIndex]) {
                     results.add(tr);
                     if (tr.bounces <= 1) pocketHit[tr.pocketIndex] = true;

@@ -47,7 +47,6 @@ public final class CustomOverlayView extends View {
 
     private void init() {
         setWillNotDraw(false);
-
         linePaint.setStyle(Paint.Style.STROKE);
         linePaint.setStrokeCap(Paint.Cap.ROUND);
         linePaint.setStrokeJoin(Paint.Join.ROUND);
@@ -106,11 +105,9 @@ public final class CustomOverlayView extends View {
         super.onDraw(canvas);
         if (tableBounds == null) return;
 
-        // 1) خطوط المسارات (تُرسم أولاً لتحت الجيوب)
         for (AimPath ap : paths) {
             if (ap.points == null || ap.points.size() < 2) continue;
             linePaint.setColor(ap.color);
-            // سماكة تتناقص مع البانكات
             float w = 8f - Math.min(4f, ap.bounces * 1.2f);
             linePaint.setStrokeWidth(w);
             linePaint.setAlpha(230);
@@ -121,7 +118,6 @@ public final class CustomOverlayView extends View {
                 canvas.drawLine(a.x, a.y, b.x, b.y, linePaint);
             }
 
-            // نقاط صغيرة عند الارتدادات
             dotPaint.setColor(ap.color);
             for (int i = 1; i < ap.points.size() - 1; i++) {
                 PointF p = ap.points.get(i);
@@ -129,7 +125,6 @@ public final class CustomOverlayView extends View {
             }
         }
 
-        // 2) الجيوب (مع توهج أخضر للجيوب المُستهدفة)
         for (int i = 0; i < pockets.size(); i++) {
             PointF p = pockets.get(i);
             if (glowingPockets.contains(i)) {
@@ -141,20 +136,9 @@ public final class CustomOverlayView extends View {
             }
         }
 
-        // 3) دائرة الكرة البيضاء
         if (cueBall != null) {
             canvas.drawCircle(cueBall.x, cueBall.y, ballRadius * 1.6f, cuePaint);
             canvas.drawCircle(cueBall.x, cueBall.y, ballRadius * 0.5f, cuePaint);
-        }
-
-        // 4) دائرة ghost (نقطة الاصطدام الأولى) — أكبر دائرتين
-        for (AimPath ap : paths) {
-            if (ap.points == null || ap.points.size() < 2) continue;
-            if (ap.bounces == 0) continue; // تجاهل المباشر
-            PointF g = ap.points.get(1);
-            ghostPaint.setColor(0xFFFFFFFF);
-            canvas.drawCircle(g.x, g.y, ballRadius * 1.5f, ghostPaint);
-            break; // واحدة فقط
         }
     }
 }

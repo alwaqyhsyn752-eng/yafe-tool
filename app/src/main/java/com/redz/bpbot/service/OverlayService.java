@@ -1,6 +1,5 @@
 package com.redz.bpbot.service;
 
-import android.app.Activity;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -8,20 +7,13 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
-import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
 import android.graphics.PointF;
-import android.hardware.display.DisplayManager;
-import android.hardware.display.VirtualDisplay;
-import android.media.Image;
-import android.media.ImageReader;
-import android.media.projection.MediaProjection;
-import android.media.projection.MediaProjectionManager;
+import android.graphics.RectF;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
-import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.WindowManager;
 
@@ -29,9 +21,8 @@ import androidx.annotation.Nullable;
 
 import com.redz.bpbot.physics.PhysicsEngine;
 import com.redz.bpbot.ui.CustomOverlayView;
-import com.redz.bpbot.vision.AutoTableDetector;
+import com.redz.bpbot.util.TableConfig;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -44,42 +35,24 @@ public final class OverlayService extends Service {
     private static final int NOTIF_ID = 1107;
 
     private static final int[] COLORS = {
-            0xFFFF3B30, // red
-            0xFF42A5F5, // blue
-            0xFFFFEB3B, // yellow
-            0xFF66BB6A, // green
-            0xFFFF9800, // orange
-            0xFFAB47BC, // purple
-            0xFFEF5350, // light red
-            0xFF29B6F6, // light blue
-            0xFF9CCC65, // light green
-            0xFFFFCA28, // amber
-            0xFFEC407A, // pink
-            0xFF26C6DA, // cyan
+            0xFFFF3B30, 0xFF42A5F5, 0xFFFFEB3B, 0xFF66BB6A,
+            0xFFFF9800, 0xFFAB47BC, 0xFFEF5350, 0xFF29B6F6,
+            0xFF9CCC65, 0xFFFFCA28, 0xFFEC407A, 0xFF26C6DA
     };
 
     private WindowManager wm;
     private CustomOverlayView overlay;
     private WindowManager.LayoutParams overlayLp;
+    private TableConfig config;
 
-    private MediaProjection projection;
-    private VirtualDisplay vDisplay;
-    private ImageReader reader;
-
-    private int screenW, screenH, screenDpi;
     private final Handler loop = new Handler(Looper.getMainLooper());
-    private volatile boolean running = false;
-    private volatile boolean busy = false;
-    private int frameTick = 0;
+    private Runnable drawer;
 
     @Override
     public void onCreate() {
         super.onCreate();
         wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-        DisplayMetrics dm = getResources().getDisplayMetrics();
-        screenW = dm.widthPixels;
-        screenH = dm.heightPixels;
-        screenDpi = dm.densityDpi;
+        config = TableConfig.load(this);
         startForegroundInternal();
         buildOverlay();
     }
@@ -87,32 +60,12 @@ public final class OverlayService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) return START_STICKY;
-        Intent data = intent.getParcelableExtra(EXTRA_RESULT_DATA);
-        if (data == null) return START_STICKY;
-
-        MediaProjectionManager mgr =
-                (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
-        if (mgr == null) return START_STICKY;
-
-        if (projection != null) {
-            try { projection.stop(); } catch (Exception ignored) {}
-            projection = null;
+        config = TableConfig.load(this);
+        if (!config.isSet) {
+            stopSelf();
+            return START_NOT_STICKY;
         }
-        try {
-            projection = mgr.getMediaProjection(Activity.RESULT_OK, data);
-        } catch (Exception e) {
-            return START_STICKY;
-        }
-        if (projection == null) return START_STICKY;
-
-        if (Build.VERSION.SDK_INT >= 34) {
-            try {
-                projection.registerCallback(new MediaProjection.Callback() {
-                    @Override public void onStop() { }
-                }, loop);
-            } catch (Exception ignored) {}
-        }
-        startCapture();
+        startDrawing();
         return START_STICKY;
     }
 
@@ -129,12 +82,14 @@ public final class OverlayService extends Service {
                 .setSmallIcon(android.R.drawable.ic_menu_compass)
                 .setOngoing(true)
                 .build();
-        if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(NOTIF_ID, n,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
-        } else {
-            startForeground(NOTIF_ID, n);
-        }
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                startForeground(NOTIF_ID, n,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+            } else {
+                startForeground(NOTIF_ID, n);
+            }
+        } catch (Exception ignored) {}
     }
 
     private void buildOverlay() {
@@ -154,110 +109,57 @@ public final class OverlayService extends Service {
         try { wm.addView(overlay, overlayLp); } catch (Exception ignored) {}
     }
 
-    private void startCapture() {
-        if (projection == null || running) return;
-        reader = ImageReader.newInstance(screenW, screenH, PixelFormat.RGBA_8888, 2);
-        try {
-            vDisplay = projection.createVirtualDisplay(
-                    "yafe-capture", screenW, screenH, screenDpi,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                    reader.getSurface(), null, loop);
-        } catch (Exception e) { return; }
-        running = true;
-        reader.setOnImageAvailableListener(r -> {
-            Image img = null;
-            try {
-                img = r.acquireLatestImage();
-                if (img == null || busy) return;
-                Bitmap bmp = toBitmap(img);
-                if (bmp != null) {
-                    busy = true;
-                    try { processFrame(bmp); }
-                    finally { busy = false; bmp.recycle(); }
-                }
-            } catch (Exception ignored) {
-            } finally {
-                if (img != null) img.close();
+    private void startDrawing() {
+        if (drawer != null) loop.removeCallbacks(drawer);
+        drawer = new Runnable() {
+            @Override public void run() {
+                try { drawOnce(); } catch (Exception ignored) {}
+                loop.postDelayed(this, 500);
             }
-        }, loop);
+        };
+        loop.post(drawer);
     }
 
-    private Bitmap toBitmap(Image img) {
-        Image.Plane[] planes = img.getPlanes();
-        if (planes.length == 0) return null;
-        ByteBuffer buf = planes[0].getBuffer();
-        int pixelStride = planes[0].getPixelStride();
-        int rowStride = planes[0].getRowStride();
-        int rowPad = rowStride - pixelStride * screenW;
-        Bitmap bmp = Bitmap.createBitmap(
-                screenW + rowPad / pixelStride, screenH, Bitmap.Config.ARGB_8888);
-        buf.rewind();
-        bmp.copyPixelsFromBuffer(buf);
-        Bitmap cropped = Bitmap.createBitmap(bmp, 0, 0, screenW, screenH);
-        if (cropped != bmp) bmp.recycle();
-        return cropped;
-    }
+    private void drawOnce() {
+        if (!config.isSet || overlay == null) return;
 
-    private void processFrame(Bitmap bmp) {
-        try {
-            frameTick++;
-            if (frameTick % 3 != 0) return;
+        RectF bounds = new RectF(
+                config.left, config.top, config.right, config.bottom);
+        List<PointF> pockets = config.pockets();
+        float br = config.ballRadius();
+        float pr = config.pocketRadius();
 
-            AutoTableDetector.Table t = AutoTableDetector.detect(bmp, null);
+        PointF cue = new PointF(
+                bounds.left + bounds.width() * 0.25f,
+                bounds.centerY());
 
-            if (overlay == null) return;
-            if (!t.detected) {
-                overlay.clear();
-                return;
-            }
+        overlay.setTable(bounds, pockets, cue, br, pr);
 
-            // إذا فشل كشف الكرة البيضاء، استخدم الموضع الافتراضي داخل الطاولة
-            PointF cue = t.cueBall;
-            if (cue == null) {
-                cue = new PointF(
-                        t.bounds.left + t.bounds.width() * 0.25f,
-                        t.bounds.centerY());
-            }
+        List<PhysicsEngine.Trace> traces = PhysicsEngine.raycastAll(
+                cue, bounds, pockets, br, pr, 72, 2);
 
-            overlay.setTable(t.bounds, t.pockets, cue,
-                    t.ballRadius, t.pocketRadius);
+        List<CustomOverlayView.AimPath> paths = new ArrayList<>();
+        List<Integer> glows = new ArrayList<>();
 
-            // شعاع كل 5° (=72 شعاعاً) حتى 3 بانكات
-            List<PhysicsEngine.Trace> traces = PhysicsEngine.raycastAll(
-                    cue, t.bounds, t.pockets,
-                    t.ballRadius, t.pocketRadius,
-                    72, 3);
-
-            List<CustomOverlayView.AimPath> paths = new ArrayList<>();
-            List<Integer> glows = new ArrayList<>();
-
-            // المسار الأبيض الأساسي: من الكرة البيضاء أفقياً نحو الكتلة
-            PhysicsEngine.Trace whiteTr = PhysicsEngine.trace(
-                    cue, 1f, 0f,
-                    t.bounds, t.pockets, t.ballRadius, t.pocketRadius, 0);
-            if (whiteTr.path.size() >= 2) {
-                paths.add(new CustomOverlayView.AimPath(
-                        whiteTr.path, 0xFFFFFFFF, 0, -1));
-            }
-
-            // أضف المسارات الملوّنة
-            int colorIdx = 0;
-            for (PhysicsEngine.Trace tr : traces) {
-                // تجنّب الخط المباشر تماماً (زاوية قريبة من الأبيض)
-                if (tr.bounces == 0 && Math.abs(tr.angle) < 0.15f) continue;
-                int color = COLORS[colorIdx % COLORS.length];
-                colorIdx++;
-                paths.add(new CustomOverlayView.AimPath(
-                        tr.path, color, tr.bounces, tr.pocketIndex));
-                if (tr.pocketIndex >= 0 && !glows.contains(tr.pocketIndex)) {
-                    glows.add(tr.pocketIndex);
-                }
-            }
-
-            overlay.setPaths(paths, glows);
-
-        } catch (Exception ignored) {
+        PhysicsEngine.Trace white = PhysicsEngine.trace(
+                cue, 1f, 0f, bounds, pockets, br, pr, 0);
+        if (white.path.size() >= 2) {
+            paths.add(new CustomOverlayView.AimPath(
+                    white.path, 0xFFFFFFFF, 0, -1));
         }
+
+        int ci = 0;
+        for (PhysicsEngine.Trace tr : traces) {
+            if (tr.bounces == 0 && Math.abs(tr.angle) < 0.15f) continue;
+            int col = COLORS[ci % COLORS.length]; ci++;
+            paths.add(new CustomOverlayView.AimPath(
+                    tr.path, col, tr.bounces, tr.pocketIndex));
+            if (tr.pocketIndex >= 0 && !glows.contains(tr.pocketIndex)) {
+                glows.add(tr.pocketIndex);
+            }
+        }
+
+        overlay.setPaths(paths, glows);
     }
 
     @Nullable
@@ -266,16 +168,7 @@ public final class OverlayService extends Service {
 
     @Override
     public void onDestroy() {
-        running = false;
-        if (vDisplay != null) {
-            try { vDisplay.release(); } catch (Exception ignored) {}
-            vDisplay = null;
-        }
-        if (projection != null) {
-            try { projection.stop(); } catch (Exception ignored) {}
-            projection = null;
-        }
-        if (reader != null) { reader.close(); reader = null; }
+        if (drawer != null) loop.removeCallbacks(drawer);
         if (overlay != null && wm != null) {
             try { wm.removeView(overlay); } catch (Exception ignored) {}
         }
