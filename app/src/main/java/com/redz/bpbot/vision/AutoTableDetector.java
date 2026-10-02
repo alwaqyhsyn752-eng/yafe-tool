@@ -18,36 +18,66 @@ public final class AutoTableDetector {
         public float pocketRadius = 22f;
     }
 
+    /**
+     * كشف الطاولة بطريقة أكثر تحفظاً:
+     * - يقصر البحث على المنطقة الوسطى من الشاشة (يتجنب الـ UI)
+     * - يبني histogram للأعمدة والصفوف ليجد الحدود الحقيقية للقماش
+     */
     public static Table detect(Bitmap bmp, Table prev) {
         Table t = new Table();
         if (bmp == null) return t;
 
         int w = bmp.getWidth();
         int h = bmp.getHeight();
-        int yTop = (int) (h * 0.10f);
-        int yBot = (int) (h * 0.92f);
 
-        int step = 4;
-        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE;
-        int maxX = 0, maxY = 0;
-        int count = 0;
+        // قص منطقة البحث: 10%-90% أفقياً، 18%-88% رأسياً
+        // هذا يستبعد HUD اللعبة (اللاعبون/الأزرار) والجزء السفلي
+        int searchLeft   = (int) (w * 0.05f);
+        int searchRight  = (int) (w * 0.95f);
+        int searchTop    = (int) (h * 0.18f);
+        int searchBottom = (int) (h * 0.88f);
 
-        for (int y = yTop; y < yBot; y += step) {
-            for (int x = 0; x < w; x += step) {
-                int c = bmp.getPixel(x, y);
-                if (isFelt(c)) {
-                    if (x < minX) minX = x;
-                    if (y < minY) minY = y;
-                    if (x > maxX) maxX = x;
-                    if (y > maxY) maxY = y;
-                    count++;
+        int step = 3;
+
+        // Histogram للأعمدة (X) والصفوف (Y)
+        int[] colHits = new int[w];
+        int[] rowHits = new int[h];
+
+        for (int y = searchTop; y < searchBottom; y += step) {
+            for (int x = searchLeft; x < searchRight; x += step) {
+                if (isFelt(bmp.getPixel(x, y))) {
+                    colHits[x]++;
+                    rowHits[y]++;
                 }
             }
         }
 
-        if (count < 200 || maxX - minX < w * 0.30f || maxY - minY < h * 0.25f) {
-            return t;
+        // عتبة: عمود/صف يُعدّ "داخل الطاولة" إذا تجاوز 25% من أقصى قيمة
+        int maxCol = 0, maxRow = 0;
+        for (int x = searchLeft; x < searchRight; x++) if (colHits[x] > maxCol) maxCol = colHits[x];
+        for (int y = searchTop; y < searchBottom; y++) if (rowHits[y] > maxRow) maxRow = rowHits[y];
+        if (maxCol < 5 || maxRow < 5) return t;
+
+        int colThresh = (int) (maxCol * 0.35f);
+        int rowThresh = (int) (maxRow * 0.35f);
+
+        int minX = -1, maxX = -1, minY = -1, maxY = -1;
+        for (int x = searchLeft; x < searchRight; x++) {
+            if (colHits[x] >= colThresh) { minX = x; break; }
         }
+        for (int x = searchRight - 1; x >= searchLeft; x--) {
+            if (colHits[x] >= colThresh) { maxX = x; break; }
+        }
+        for (int y = searchTop; y < searchBottom; y++) {
+            if (rowHits[y] >= rowThresh) { minY = y; break; }
+        }
+        for (int y = searchBottom - 1; y >= searchTop; y--) {
+            if (rowHits[y] >= rowThresh) { maxY = y; break; }
+        }
+
+        if (minX < 0 || maxX < 0 || minY < 0 || maxY < 0) return t;
+        if (maxX - minX < w * 0.40f) return t;
+        if (maxY - minY < h * 0.30f) return t;
 
         t.bounds.set(minX, minY, maxX, maxY);
         t.detected = true;
@@ -56,22 +86,27 @@ public final class AutoTableDetector {
         float top = t.bounds.top, bottom = t.bounds.bottom;
         float cx = (left + right) / 2f;
 
-        float pw = (right - left) * 0.030f;
-        float ph = (bottom - top) * 0.045f;
+        // نصف قطر الجيب بحسب نسبة من عرض/ارتفاع الطاولة
+        float pw = (right - left) * 0.032f;
+        float ph = (bottom - top) * 0.048f;
         float pr = Math.max(pw, ph);
 
-        t.pockets.add(new PointF(left,  top));
-        t.pockets.add(new PointF(cx,    top));
-        t.pockets.add(new PointF(right, top));
-        t.pockets.add(new PointF(left,  bottom));
-        t.pockets.add(new PointF(cx,    bottom));
-        t.pockets.add(new PointF(right, bottom));
+        // الجيوب الستة: 4 زوايا + 2 وسط
+        t.pockets.add(new PointF(left  + pw * 0.2f, top    + ph * 0.2f));
+        t.pockets.add(new PointF(cx,                top    + ph * 0.1f));
+        t.pockets.add(new PointF(right - pw * 0.2f, top    + ph * 0.2f));
+        t.pockets.add(new PointF(left  + pw * 0.2f, bottom - ph * 0.2f));
+        t.pockets.add(new PointF(cx,                bottom - ph * 0.1f));
+        t.pockets.add(new PointF(right - pw * 0.2f, bottom - ph * 0.2f));
 
-        t.pocketRadius = pr * 1.8f;
-        t.ballRadius = (right - left) / 60f;
-        if (t.ballRadius < 5f) t.ballRadius = 5f;
+        t.pocketRadius = pr * 1.9f;
+        t.ballRadius = (right - left) / 62f;
+        if (t.ballRadius < 6f) t.ballRadius = 6f;
+        if (t.ballRadius > 20f) t.ballRadius = 20f;
 
+        // كشف الكرة البيضاء داخل حدود الطاولة فقط
         t.cueBall = findCueBall(bmp, t.bounds, t.ballRadius);
+
         return t;
     }
 
@@ -79,24 +114,29 @@ public final class AutoTableDetector {
         int r = (c >> 16) & 0xFF;
         int g = (c >> 8) & 0xFF;
         int b = c & 0xFF;
-        // القماش الأزرق لـ 8 Ball Pool: أزرق تركوازي متوسط السطوع
-        boolean blue = (b > 90) && (b > r + 20) && (g > r + 10) && (b >= g - 30);
-        boolean teal = (g > 80 && b > 80 && g > r + 30 && b > r + 20);
+        // القماش الأزرق لـ 8 Ball Pool:
+        // R منخفض نسبياً، B مرتفع، G أعلى من R بقليل
+        boolean blue = (b > 95) && (b > r + 25) && (g > r + 5) && (b >= g - 40);
+        // تركوازي (بعض النسخ)
+        boolean teal = (g > 85 && b > 85 && g > r + 30 && b > r + 25);
         return blue || teal;
     }
 
+    /**
+     * ابحث عن الكرة البيضاء داخل مساحة الطاولة (وليس خارجها).
+     * المنطقة: الثلث السفلي الأيسر من الطاولة.
+     */
     private static PointF findCueBall(Bitmap bmp, RectF table, float ballR) {
-        // المنطقة السفلية اليسرى من الطاولة (موضع الكرة البيضاء)
-        int xStart = (int) (table.left + table.width() * 0.10f);
-        int xEnd   = (int) (table.left + table.width() * 0.45f);
-        int yStart = (int) (table.bottom - table.height() * 0.35f);
-        int yEnd   = (int) table.bottom;
+        int xStart = (int) (table.left + table.width() * 0.05f);
+        int xEnd   = (int) (table.left + table.width() * 0.55f);
+        int yStart = (int) (table.bottom - table.height() * 0.45f);
+        int yEnd   = (int) (table.bottom - 3);
 
         long sx = 0, sy = 0;
         int found = 0;
         int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE;
         int maxX = 0, maxY = 0;
-        int step = 3;
+        int step = 2;
 
         for (int y = yStart; y < yEnd; y += step) {
             if (y < 0 || y >= bmp.getHeight()) continue;
@@ -106,8 +146,9 @@ public final class AutoTableDetector {
                 int r = (c >> 16) & 0xFF;
                 int g = (c >> 8) & 0xFF;
                 int b = c & 0xFF;
-                if (r > 220 && g > 220 && b > 220
-                        && Math.abs(r - g) < 20 && Math.abs(g - b) < 20) {
+                // أبيض نقي، مع تشديد أكبر
+                if (r > 230 && g > 230 && b > 230
+                        && Math.abs(r - g) < 15 && Math.abs(g - b) < 15) {
                     if (x < minX) minX = x;
                     if (y < minY) minY = y;
                     if (x > maxX) maxX = x;
@@ -117,10 +158,11 @@ public final class AutoTableDetector {
             }
         }
 
-        if (found < 8) return null;
+        if (found < 6) return null;
         float bw = maxX - minX, bh = maxY - minY;
-        if (bw > ballR * 8 || bh > ballR * 8) return null;
-        if (bw < 3 || bh < 3) return null;
+        // يجب أن تكون بحجم كرة معقول (ليس أكبر من 3 أضعاف نصف قطر الكرة)
+        if (bw > ballR * 4 || bh > ballR * 4) return null;
+        if (bw < 2 || bh < 2) return null;
         return new PointF((float) sx / found, (float) sy / found);
     }
 }

@@ -43,7 +43,6 @@ public final class OverlayService extends Service {
     private static final String CHANNEL_ID = "yafe-tool";
     private static final int NOTIF_ID = 1107;
 
-    /** نفس ألوان الصورة المطلوبة */
     private static final int[] COLORS = {
             0xFFFF3B30, // red
             0xFF42A5F5, // blue
@@ -55,6 +54,8 @@ public final class OverlayService extends Service {
             0xFF29B6F6, // light blue
             0xFF9CCC65, // light green
             0xFFFFCA28, // amber
+            0xFFEC407A, // pink
+            0xFF26C6DA, // cyan
     };
 
     private WindowManager wm;
@@ -203,61 +204,60 @@ public final class OverlayService extends Service {
             if (frameTick % 3 != 0) return;
 
             AutoTableDetector.Table t = AutoTableDetector.detect(bmp, null);
-            if (!t.detected || overlay == null) {
-                if (overlay != null) overlay.clear();
+
+            if (overlay == null) return;
+            if (!t.detected) {
+                overlay.clear();
                 return;
             }
 
-            PointF cue = t.cueBall != null ? t.cueBall
-                    : new PointF(t.bounds.centerX(),
-                                 t.bounds.bottom - t.ballRadius * 3f);
+            // إذا فشل كشف الكرة البيضاء، استخدم الموضع الافتراضي داخل الطاولة
+            PointF cue = t.cueBall;
+            if (cue == null) {
+                cue = new PointF(
+                        t.bounds.left + t.bounds.width() * 0.25f,
+                        t.bounds.centerY());
+            }
 
             overlay.setTable(t.bounds, t.pockets, cue,
                     t.ballRadius, t.pocketRadius);
 
-            // raycast كامل: 72 شعاع (كل 5 درجات)، حتى 4 بانكات
+            // شعاع كل 5° (=72 شعاعاً) حتى 3 بانكات
             List<PhysicsEngine.Trace> traces = PhysicsEngine.raycastAll(
                     cue, t.bounds, t.pockets,
                     t.ballRadius, t.pocketRadius,
-                    72, 4);
+                    72, 3);
 
             List<CustomOverlayView.AimPath> paths = new ArrayList<>();
             List<Integer> glows = new ArrayList<>();
 
+            // المسار الأبيض الأساسي: من الكرة البيضاء أفقياً نحو الكتلة
+            PhysicsEngine.Trace whiteTr = PhysicsEngine.trace(
+                    cue, 1f, 0f,
+                    t.bounds, t.pockets, t.ballRadius, t.pocketRadius, 0);
+            if (whiteTr.path.size() >= 2) {
+                paths.add(new CustomOverlayView.AimPath(
+                        whiteTr.path, 0xFFFFFFFF, 0, -1));
+            }
+
+            // أضف المسارات الملوّنة
             int colorIdx = 0;
             for (PhysicsEngine.Trace tr : traces) {
+                // تجنّب الخط المباشر تماماً (زاوية قريبة من الأبيض)
+                if (tr.bounces == 0 && Math.abs(tr.angle) < 0.15f) continue;
                 int color = COLORS[colorIdx % COLORS.length];
                 colorIdx++;
                 paths.add(new CustomOverlayView.AimPath(
                         tr.path, color, tr.bounces, tr.pocketIndex));
-                if (!glows.contains(tr.pocketIndex)) {
+                if (tr.pocketIndex >= 0 && !glows.contains(tr.pocketIndex)) {
                     glows.add(tr.pocketIndex);
                 }
             }
 
-            // خط أبيض أساسي في الاتجاه الحالي (نحو مركز الكتلة أو أول كرة)
-            PointF whiteTarget = findNearestBall(bmp, t);
-            if (whiteTarget != null) {
-                PhysicsEngine.Trace whiteTr = PhysicsEngine.trace(
-                        cue,
-                        whiteTarget.x - cue.x, whiteTarget.y - cue.y,
-                        t.bounds, t.pockets, t.ballRadius, t.pocketRadius, 0);
-                if (whiteTr.path.size() >= 2) {
-                    paths.add(0, new CustomOverlayView.AimPath(
-                            whiteTr.path, 0xFFFFFFFF, 0, -1));
-                }
-            }
-
             overlay.setPaths(paths, glows);
+
         } catch (Exception ignored) {
         }
-    }
-
-    /** يبحث عن أقرب كرة ملوّنة للكرة البيضاء */
-    private PointF findNearestBall(Bitmap bmp, AutoTableDetector.Table t) {
-        // نبسّط: نستهدف مركز الجانب الأيمن من الطاولة (مكان تجمّع الكرات نموذجياً)
-        return new PointF(t.bounds.right - t.bounds.width() * 0.15f,
-                          t.bounds.centerY());
     }
 
     @Nullable
