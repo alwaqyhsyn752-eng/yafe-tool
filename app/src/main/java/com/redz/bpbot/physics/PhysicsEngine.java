@@ -35,6 +35,7 @@ public final class PhysicsEngine {
         if (n < EPS) return tr;
         dx /= n; dy /= n;
 
+<<<<<<< HEAD
         float x = cue.x, y = cue.y;
         float remaining = MAX_RAY_LEN;
 
@@ -42,6 +43,11 @@ public final class PhysicsEngine {
         float rW = table.right  - ballR;
         float tW = table.top    + ballR;
         float bW = table.bottom - ballR;
+=======
+        float x = cue.x, y = cue.y, remaining = MAX_RAY_LEN;
+        float lW = table.left + ballR, rW = table.right - ballR;
+        float tW = table.top  + ballR, bW = table.bottom - ballR;
+>>>>>>> 4f92f72 (yafe-tool: full stack (Detector + Physics + Overlay + Service + Manifest))
 
         for (int b = 0; b <= MAX_BOUNCES && remaining > EPS; b++) {
 
@@ -71,10 +77,15 @@ public final class PhysicsEngine {
 
             x += dx * tHit; y += dy * tHit;
             remaining -= tHit;
+<<<<<<< HEAD
 
             tr.path.add(new PointF(x, y));
             tr.segmentColor.add(b + 1);
 
+=======
+            tr.path.add(new PointF(x, y));
+            tr.segmentColor.add(b + 1);
+>>>>>>> 4f92f72 (yafe-tool: full stack (Detector + Physics + Overlay + Service + Manifest))
             if (b == 0) tr.ghostBallCenter = new PointF(x, y);
 
             if (tHit == tL || tHit == tR) dx = -dx;
@@ -84,10 +95,15 @@ public final class PhysicsEngine {
         return tr;
     }
 
+<<<<<<< HEAD
     private static int firstPocketAlongRay(float px, float py,
                                            float dx, float dy,
                                            List<PointF> pockets, float r,
                                            float maxT) {
+=======
+    private static int firstPocketAlongRay(float px, float py, float dx, float dy,
+                                           List<PointF> pockets, float r, float maxT) {
+>>>>>>> 4f92f72 (yafe-tool: full stack (Detector + Physics + Overlay + Service + Manifest))
         float bestT = Float.MAX_VALUE;
         int bestI = -1;
         float rCap = r * POCKET_CAPTURE;
@@ -95,6 +111,7 @@ public final class PhysicsEngine {
         for (int i = 0; i < pockets.size(); i++) {
             PointF c = pockets.get(i);
             float ox = px - c.x, oy = py - c.y;
+<<<<<<< HEAD
 
             float a  = dx * dx + dy * dy;
             float bq = 2f * (ox * dx + oy * dy);
@@ -103,11 +120,21 @@ public final class PhysicsEngine {
             float disc = bq * bq - 4f * a * cq;
             if (disc < 0f) continue;
 
+=======
+            float a  = dx * dx + dy * dy;
+            float bq = 2f * (ox * dx + oy * dy);
+            float cq = ox * ox + oy * oy - rCap * rCap;
+            float disc = bq * bq - 4f * a * cq;
+            if (disc < 0f) continue;
+>>>>>>> 4f92f72 (yafe-tool: full stack (Detector + Physics + Overlay + Service + Manifest))
             float sq = (float) Math.sqrt(disc);
             float t1 = (-bq - sq) / (2f * a);
             float t2 = (-bq + sq) / (2f * a);
             float t  = (t1 > EPS) ? t1 : (t2 > EPS ? t2 : -1f);
+<<<<<<< HEAD
 
+=======
+>>>>>>> 4f92f72 (yafe-tool: full stack (Detector + Physics + Overlay + Service + Manifest))
             if (t > EPS && t < bestT && t <= maxT) { bestT = t; bestI = i; }
         }
         return bestI;

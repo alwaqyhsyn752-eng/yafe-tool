@@ -43,7 +43,10 @@ public final class AutoTableDetector {
         int colHits[] = new int[frame.getWidth()];
         int feltCount = 0;
         int totalSampled = 0;
+<<<<<<< HEAD
 
+=======
+>>>>>>> 4f92f72 (yafe-tool: full stack (Detector + Physics + Overlay + Service + Manifest))
         int[] pixelRow = new int[frame.getWidth()];
 
         for (int y = y0; y < y1; y += STRIDE) {
@@ -56,8 +59,12 @@ public final class AutoTableDetector {
         }
 
         if (totalSampled == 0) return t;
+<<<<<<< HEAD
         float ratio = feltCount / (float) totalSampled;
         if (ratio < FELT_MIN_RATIO) return t;
+=======
+        if (feltCount / (float) totalSampled < FELT_MIN_RATIO) return t;
+>>>>>>> 4f92f72 (yafe-tool: full stack (Detector + Physics + Overlay + Service + Manifest))
 
         int top    = firstAbove(rowHits, 1, y0, y1);
         int bottom = lastAbove(rowHits, 1, y0, y1);
@@ -77,6 +84,7 @@ public final class AutoTableDetector {
     private static void computePockets(Table t) {
         RectF b = t.bounds;
         float cy = b.centerY();
+<<<<<<< HEAD
         float pocketR = Math.min(b.width(), b.height()) * POCKET_R_RATIO;
 
         t.pockets.clear();
@@ -88,6 +96,19 @@ public final class AutoTableDetector {
         t.pockets.add(new PointF(b.right - pocketR, cy));
 
         t.pocketRadius = pocketR;
+=======
+        float pr = Math.min(b.width(), b.height()) * POCKET_R_RATIO;
+
+        t.pockets.clear();
+        t.pockets.add(new PointF(b.left  + pr, b.top    + pr));
+        t.pockets.add(new PointF(b.right - pr, b.top    + pr));
+        t.pockets.add(new PointF(b.left  + pr, b.bottom - pr));
+        t.pockets.add(new PointF(b.right - pr, b.bottom - pr));
+        t.pockets.add(new PointF(b.left  + pr, cy));
+        t.pockets.add(new PointF(b.right - pr, cy));
+
+        t.pocketRadius = pr;
+>>>>>>> 4f92f72 (yafe-tool: full stack (Detector + Physics + Overlay + Service + Manifest))
         t.ballRadius   = Math.min(b.width(), b.height()) * 0.018f;
     }
 
@@ -95,6 +116,7 @@ public final class AutoTableDetector {
         int r = (color >> 16) & 0xFF;
         int g = (color >> 8)  & 0xFF;
         int b =  color        & 0xFF;
+<<<<<<< HEAD
 
         float[] hsv = new float[3];
         android.graphics.Color.RGBToHSV(r, g, b, hsv);
@@ -110,6 +132,20 @@ public final class AutoTableDetector {
     }
     private static int lastAbove(int[] arr, int th, int from, int to) {
         for (int i = to - 1; i >= from; i--) if (arr[i] >= th) return i;
+=======
+        float[] hsv = new float[3];
+        android.graphics.Color.RGBToHSV(r, g, b, hsv);
+        if (hsv[2] < VAL_MIN || hsv[1] < SAT_MIN) return false;
+        return (hsv[0] >= HUE_MIN && hsv[0] <= HUE_MAX);
+    }
+
+    private static int firstAbove(int[] a, int th, int from, int to) {
+        for (int i = from; i < to; i++) if (a[i] >= th) return i;
+        return -1;
+    }
+    private static int lastAbove(int[] a, int th, int from, int to) {
+        for (int i = to - 1; i >= from; i--) if (a[i] >= th) return i;
+>>>>>>> 4f92f72 (yafe-tool: full stack (Detector + Physics + Overlay + Service + Manifest))
         return -1;
     }
 }

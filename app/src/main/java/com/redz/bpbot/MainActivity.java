@@ -15,8 +15,13 @@ import com.redz.bpbot.service.OverlayService;
 
 public final class MainActivity extends Activity {
 
+<<<<<<< HEAD
     private static final int REQ_OVERLAY  = 1001;
     private static final int REQ_CAPTURE  = 1002;
+=======
+    private static final int REQ_OVERLAY = 1001;
+    private static final int REQ_CAPTURE = 1002;
+>>>>>>> 4f92f72 (yafe-tool: full stack (Detector + Physics + Overlay + Service + Manifest))
 
     private MediaProjectionManager projectionMgr;
 
@@ -40,13 +45,18 @@ public final class MainActivity extends Activity {
 
         setContentView(root);
 
+<<<<<<< HEAD
         if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
             askOverlayPermission();
         }
+=======
+        if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) askOverlayPermission();
+>>>>>>> 4f92f72 (yafe-tool: full stack (Detector + Physics + Overlay + Service + Manifest))
     }
 
     private void askOverlayPermission() {
         if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
+<<<<<<< HEAD
             Intent i = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:" + getPackageName()));
             startActivityForResult(i, REQ_OVERLAY);
@@ -58,6 +68,16 @@ public final class MainActivity extends Activity {
     private void askCapturePermission() {
         if (projectionMgr == null) return;
         startActivityForResult(projectionMgr.createScreenCaptureIntent(), REQ_CAPTURE);
+=======
+            startActivityForResult(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName())), REQ_OVERLAY);
+        } else Toast.makeText(this, "Overlay already granted", Toast.LENGTH_SHORT).show();
+    }
+
+    private void askCapturePermission() {
+        if (projectionMgr != null)
+            startActivityForResult(projectionMgr.createScreenCaptureIntent(), REQ_CAPTURE);
+>>>>>>> 4f92f72 (yafe-tool: full stack (Detector + Physics + Overlay + Service + Manifest))
     }
 
     @Override protected void onActivityResult(int req, int res, Intent data) {
