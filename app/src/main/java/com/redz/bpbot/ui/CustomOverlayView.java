@@ -9,9 +9,21 @@ import android.graphics.RectF;
 import android.util.AttributeSet;
 import android.view.View;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public final class CustomOverlayView extends View {
+
+    /** مسار واحد ملوّن مع إمكانية توهج الجيب */
+    public static final class AimPath {
+        public final List<PointF> points;
+        public final int color;
+        public final boolean primary;
+        public final int pocketIndex;
+        public AimPath(List<PointF> p, int c, boolean prim, int pi) {
+            points = p; color = c; primary = prim; pocketIndex = pi;
+        }
+    }
 
     private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint glowOuter = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -19,16 +31,16 @@ public final class CustomOverlayView extends View {
     private final Paint pocketPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint ghostPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint cuePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint dotPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private RectF tableBounds;
-    private List<PointF> pockets;
+    private List<PointF> pockets = new ArrayList<>();
     private PointF cueBall;
     private float ballRadius = 12f;
     private float pocketRadius = 22f;
-    private int glowPocketIndex = -1;
 
-    private List<PointF> pathPoints;
-    private List<Integer> segmentColors;
+    private final List<AimPath> paths = new ArrayList<>();
+    private final List<Integer> glowingPockets = new ArrayList<>();
 
     public CustomOverlayView(Context c) { super(c); init(); }
     public CustomOverlayView(Context c, AttributeSet a) { super(c, a); init(); }
@@ -42,14 +54,14 @@ public final class CustomOverlayView extends View {
         linePaint.setStrokeJoin(Paint.Join.ROUND);
 
         glowOuter.setStyle(Paint.Style.FILL);
-        glowOuter.setColor(0x5500FF66);
+        glowOuter.setColor(0x6600FF66);
 
         glowInner.setStyle(Paint.Style.FILL);
         glowInner.setColor(0xFF00FF66);
 
         pocketPaint.setStyle(Paint.Style.STROKE);
         pocketPaint.setStrokeWidth(3f);
-        pocketPaint.setColor(0x99FFFFFF);
+        pocketPaint.setColor(0x88FFFFFF);
 
         ghostPaint.setStyle(Paint.Style.STROKE);
         ghostPaint.setStrokeWidth(3f);
@@ -58,46 +70,35 @@ public final class CustomOverlayView extends View {
         cuePaint.setStyle(Paint.Style.STROKE);
         cuePaint.setStrokeWidth(3f);
         cuePaint.setColor(0xFFFFFFFF);
+
+        dotPaint.setStyle(Paint.Style.FILL);
     }
 
-    public void setTable(RectF bounds, List<PointF> pockets, PointF cue,
+    public void setTable(RectF bounds, List<PointF> p, PointF cue,
                          float ballR, float pocketR) {
         this.tableBounds = bounds;
-        this.pockets = pockets;
+        if (p != null) this.pockets = p; else this.pockets = new ArrayList<>();
         this.cueBall = cue;
         this.ballRadius = ballR;
         this.pocketRadius = pocketR;
         postInvalidate();
     }
 
-    public void setPath(List<PointF> pts, List<Integer> colors, int glowIdx) {
-        this.pathPoints = pts;
-        this.segmentColors = colors;
-        this.glowPocketIndex = glowIdx;
+    public void setPaths(List<AimPath> newPaths, List<Integer> glow) {
+        paths.clear();
+        if (newPaths != null) paths.addAll(newPaths);
+        glowingPockets.clear();
+        if (glow != null) glowingPockets.addAll(glow);
         postInvalidate();
     }
 
     public void clear() {
         tableBounds = null;
-        pockets = null;
+        pockets.clear();
         cueBall = null;
-        pathPoints = null;
-        segmentColors = null;
-        glowPocketIndex = -1;
+        paths.clear();
+        glowingPockets.clear();
         postInvalidate();
-    }
-
-    private int colorForSegment(int idx) {
-        switch (idx) {
-            case 0: return 0xFFFFFFFF;
-            case 1: return 0xFF42A5F5;
-            case 2: return 0xFFFFA726;
-            case 3: return 0xFF66BB6A;
-            case 4: return 0xFFFFEE58;
-            case 5: return 0xFFAB47BC;
-            case 6: return 0xFFFF7043;
-            default: return 0xFFEF5350;
-        }
     }
 
     @Override
@@ -105,35 +106,45 @@ public final class CustomOverlayView extends View {
         super.onDraw(canvas);
         if (tableBounds == null) return;
 
-        if (pockets != null) {
-            for (int i = 0; i < pockets.size(); i++) {
-                PointF p = pockets.get(i);
-                if (i == glowPocketIndex) {
-                    canvas.drawCircle(p.x, p.y, pocketRadius * 2.2f, glowOuter);
-                    canvas.drawCircle(p.x, p.y, pocketRadius * 1.2f, glowInner);
-                } else {
-                    canvas.drawCircle(p.x, p.y, pocketRadius, pocketPaint);
-                }
+        // 1) رسم الجيوب (مع توهج أخضر لمن استُهدف)
+        for (int i = 0; i < pockets.size(); i++) {
+            PointF p = pockets.get(i);
+            if (glowingPockets.contains(i)) {
+                canvas.drawCircle(p.x, p.y, pocketRadius * 2.4f, glowOuter);
+                canvas.drawCircle(p.x, p.y, pocketRadius * 1.2f, glowInner);
+            } else {
+                canvas.drawCircle(p.x, p.y, pocketRadius, pocketPaint);
             }
         }
 
-        if (pathPoints != null && segmentColors != null
-                && pathPoints.size() >= 2) {
-            int segs = Math.min(pathPoints.size() - 1, segmentColors.size());
-            for (int i = 0; i < segs; i++) {
-                linePaint.setColor(colorForSegment(segmentColors.get(i)));
-                linePaint.setStrokeWidth(i == 0 ? 9f : 6f);
-                PointF a = pathPoints.get(i);
-                PointF b = pathPoints.get(i + 1);
+        // 2) رسم كل المسارات
+        for (AimPath ap : paths) {
+            if (ap.points == null || ap.points.size() < 2) continue;
+            linePaint.setColor(ap.color);
+            linePaint.setStrokeWidth(ap.primary ? 10f : 6f);
+            linePaint.setAlpha(ap.primary ? 255 : 200);
+
+            for (int i = 0; i < ap.points.size() - 1; i++) {
+                PointF a = ap.points.get(i);
+                PointF b = ap.points.get(i + 1);
                 canvas.drawLine(a.x, a.y, b.x, b.y, linePaint);
             }
 
-            PointF ghost = pathPoints.get(1);
-            if (ghost != null && segs > 1) {
-                canvas.drawCircle(ghost.x, ghost.y, ballRadius * 1.6f, ghostPaint);
+            // دائرة عند نقطة ghost (أول ارتداد/اصطدام)
+            if (ap.primary && ap.points.size() >= 2) {
+                PointF g = ap.points.get(1);
+                canvas.drawCircle(g.x, g.y, ballRadius * 1.7f, ghostPaint);
+            }
+
+            // نقاط عند كل ارتداد
+            dotPaint.setColor(ap.color);
+            for (int i = 1; i < ap.points.size() - 1; i++) {
+                PointF p = ap.points.get(i);
+                canvas.drawCircle(p.x, p.y, 7f, dotPaint);
             }
         }
 
+        // 3) دائرة الكرة البيضاء
         if (cueBall != null) {
             canvas.drawCircle(cueBall.x, cueBall.y, ballRadius * 1.5f, cuePaint);
         }

@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.PointF;
 import android.hardware.display.DisplayManager;
@@ -32,6 +33,8 @@ import com.redz.bpbot.ui.CustomOverlayView;
 import com.redz.bpbot.vision.AutoTableDetector;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class OverlayService extends Service {
 
@@ -40,6 +43,16 @@ public final class OverlayService extends Service {
 
     private static final String CHANNEL_ID = "yafe-tool";
     private static final int NOTIF_ID = 1107;
+
+    /** ألوان الخطوط الثانوية — تطابق الصورة: أحمر/أزرق/أصفر/أخضر/برتقالي/بنفسجي */
+    private static final int[] SECONDARY_COLORS = {
+            0xFFFF3B30, // red
+            0xFF42A5F5, // blue
+            0xFFFFEB3B, // yellow
+            0xFF66BB6A, // green
+            0xFFFF9800, // orange
+            0xFFAB47BC  // purple
+    };
 
     private WindowManager wm;
     private CustomOverlayView overlay;
@@ -52,6 +65,8 @@ public final class OverlayService extends Service {
     private int screenW, screenH, screenDpi;
     private final Handler loop = new Handler(Looper.getMainLooper());
     private volatile boolean running = false;
+    private volatile boolean busy = false;
+    private int frameTick = 0;
 
     @Override
     public void onCreate() {
@@ -90,7 +105,7 @@ public final class OverlayService extends Service {
         if (Build.VERSION.SDK_INT >= 34) {
             try {
                 projection.registerCallback(new MediaProjection.Callback() {
-                    @Override public void onStop() { /* noop */ }
+                    @Override public void onStop() { }
                 }, loop);
             } catch (Exception ignored) {}
         }
@@ -155,8 +170,13 @@ public final class OverlayService extends Service {
             try {
                 img = r.acquireLatestImage();
                 if (img == null) return;
+                if (busy) return;
                 Bitmap bmp = toBitmap(img);
-                if (bmp != null) processFrame(bmp);
+                if (bmp != null) {
+                    busy = true;
+                    processFrame(bmp);
+                    busy = false;
+                }
             } catch (Exception ignored) {
             } finally {
                 if (img != null) img.close();
@@ -182,6 +202,10 @@ public final class OverlayService extends Service {
 
     private void processFrame(Bitmap bmp) {
         try {
+            // خفّف الحمل — عالج كل إطار ثالث
+            frameTick++;
+            if (frameTick % 3 != 0) return;
+
             AutoTableDetector.Table t = AutoTableDetector.detect(bmp, null);
             if (!t.detected || overlay == null) {
                 if (overlay != null) overlay.clear();
@@ -192,30 +216,40 @@ public final class OverlayService extends Service {
                     : new PointF(t.bounds.centerX(),
                                  t.bounds.bottom - t.ballRadius * 3f);
 
-            PhysicsEngine.Trace best = null;
-            int bestPocket = -1;
+            // خزّن الطاولة في الـ overlay
+            overlay.setTable(t.bounds, t.pockets, cue,
+                    t.ballRadius, t.pocketRadius);
+
+            List<CustomOverlayView.AimPath> paths = new ArrayList<>();
+            List<Integer> glows = new ArrayList<>();
+
+            // 1) خط أبيض أساسي — من الكرة البيضاء إلى مركز الكتلة/الحواف
+            PhysicsEngine.Trace white = PhysicsEngine.trace(
+                    cue, 0f, -1f, t.bounds, t.pockets,
+                    t.ballRadius, t.pocketRadius, 0);
+            if (white.path.size() >= 2) {
+                paths.add(new CustomOverlayView.AimPath(
+                        white.path, Color.WHITE, true, -1));
+            }
+
+            // 2) لكل جيب: حاول العثور على مسار بانك واحد أو اثنين
             for (int i = 0; i < t.pockets.size(); i++) {
-                PointF p = t.pockets.get(i);
-                float dx = p.x - cue.x, dy = p.y - cue.y;
-                PhysicsEngine.Trace tr = PhysicsEngine.traceFromCue(
-                        cue, dx, dy, t.bounds, t.pockets,
-                        t.ballRadius, t.pocketRadius);
-                if (tr.reached && tr.bounces == 0) {
-                    best = tr; bestPocket = tr.pocketIndex;
-                    break;
-                }
-                if (best == null && tr.reached) {
-                    best = tr; bestPocket = tr.pocketIndex;
+                PhysicsEngine.Trace tr = PhysicsEngine.traceToPocket(
+                        cue, i, t.bounds, t.pockets,
+                        t.ballRadius, t.pocketRadius, 2);
+                if (tr != null && tr.path.size() >= 2) {
+                    int color = SECONDARY_COLORS[i % SECONDARY_COLORS.length];
+                    boolean isPrimary = tr.bounces <= 1;
+                    paths.add(new CustomOverlayView.AimPath(
+                            tr.path, color, false, i));
+                    if (tr.bounces <= 1 && !glows.contains(i)) {
+                        glows.add(i);
+                    }
                 }
             }
 
-            overlay.setTable(t.bounds, t.pockets, cue,
-                    t.ballRadius, t.pocketRadius);
-            if (best != null) {
-                overlay.setPath(best.path, best.colors, bestPocket);
-            } else {
-                overlay.setPath(null, null, -1);
-            }
+            overlay.setPaths(paths, glows);
+
         } catch (Exception ignored) {
         } finally {
             bmp.recycle();
