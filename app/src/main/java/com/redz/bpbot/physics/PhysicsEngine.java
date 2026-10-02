@@ -9,8 +9,8 @@ import java.util.List;
 public final class PhysicsEngine {
 
     private static final float EPS = 1e-3f;
-    private static final float MAX_RAY = 6000f;
-    private static final float POCKET_CAPTURE = 0.92f;
+    private static final float MAX_RAY = 8000f;
+    private static final float POCKET_CAPTURE = 0.95f;
 
     public static final class Trace {
         public final List<PointF> path = new ArrayList<>();
@@ -19,18 +19,15 @@ public final class PhysicsEngine {
         public int pocketIndex = -1;
         public boolean reached = false;
         public int bounces = 0;
+        public float angle;
     }
 
-    /**
-     * يتبع المسار من نقطة انطلاق نحو اتجاه معيّن، مع ارتدادات متعددة.
-     * يتوقف عند اصطدام جيب، أو عند تجاوز maxBounces.
-     */
     public static Trace trace(PointF start, float dirX, float dirY,
                               RectF bounds, List<PointF> pockets,
-                              float ballR, float pocketR,
-                              int maxBounces) {
+                              float ballR, float pocketR, int maxBounces) {
         Trace tr = new Trace();
         tr.path.add(new PointF(start.x, start.y));
+        tr.angle = (float) Math.atan2(dirY, dirX);
 
         float dx = dirX, dy = dirY;
         float n = (float) Math.hypot(dx, dy);
@@ -61,8 +58,7 @@ public final class PhysicsEngine {
 
             float tHit = Math.min(Math.min(tL, tR), Math.min(tT, tB));
             if (tHit >= remaining || tHit == Float.MAX_VALUE) {
-                x += dx * remaining;
-                y += dy * remaining;
+                x += dx * remaining; y += dy * remaining;
                 tr.path.add(new PointF(x, y));
                 tr.bounces = b;
                 return tr;
@@ -82,43 +78,33 @@ public final class PhysicsEngine {
     }
 
     /**
-     * يحاول الوصول إلى جيب محدد (pocketIndex) باستخدام حتى maxBounces ارتدادات.
-     * يجرب سلسلة من الزوايا حول الاتجاه المباشر حتى ينجح.
+     * يشعّ N شعاع من نقطة البداية بكل الاتجاهات.
+     * يحتفظ فقط بالشعاعات التي تصل جيباً، مع منع التكرار.
      */
-    public static Trace traceToPocket(PointF start, int pocketIndex,
-                                      RectF bounds, List<PointF> pockets,
-                                      float ballR, float pocketR,
-                                      int maxBounces) {
-        if (pocketIndex < 0 || pocketIndex >= pockets.size()) return null;
-        PointF target = pockets.get(pocketIndex);
+    public static List<Trace> raycastAll(PointF start, RectF bounds,
+                                         List<PointF> pockets,
+                                         float ballR, float pocketR,
+                                         int rayCount, int maxBounces) {
+        List<Trace> results = new ArrayList<>();
+        // لتتبّع الجيوب التي تم الوصول إليها ومنع التكرار القبيح
+        boolean[] pocketHit = new boolean[pockets.size()];
+        float angularStep = (float) (2 * Math.PI / rayCount);
 
-        // 1) محاولة مباشرة
-        float dx = target.x - start.x;
-        float dy = target.y - start.y;
-        Trace direct = trace(start, dx, dy, bounds, pockets, ballR, pocketR, 0);
-        if (direct.reached && direct.pocketIndex == pocketIndex) return direct;
-
-        // 2) محاولة بانكات متعددة — نجرّب مجموعة زوايا
-        for (int banks = 1; banks <= maxBounces; banks++) {
-            // للبانك الواحد: نستخدم نقاط على الحواف كأهداف وسيطة
-            for (int edge = 0; edge < 4; edge++) {
-                for (int k = 1; k <= 7; k++) {
-                    float f = k / 8f;
-                    PointF via;
-                    switch (edge) {
-                        case 0: via = new PointF(bounds.left + bounds.width() * f, bounds.top + ballR); break;
-                        case 1: via = new PointF(bounds.right - ballR, bounds.top + bounds.height() * f); break;
-                        case 2: via = new PointF(bounds.left + bounds.width() * f, bounds.bottom - ballR); break;
-                        default: via = new PointF(bounds.left + ballR, bounds.top + bounds.height() * f); break;
-                    }
-                    float ddx = via.x - start.x;
-                    float ddy = via.y - start.y;
-                    Trace t = trace(start, ddx, ddy, bounds, pockets, ballR, pocketR, banks);
-                    if (t.reached && t.pocketIndex == pocketIndex) return t;
+        for (int i = 0; i < rayCount; i++) {
+            float a = i * angularStep;
+            float dx = (float) Math.cos(a);
+            float dy = (float) Math.sin(a);
+            Trace tr = trace(start, dx, dy, bounds, pockets,
+                    ballR, pocketR, maxBounces);
+            if (tr.reached) {
+                // احتفظ بالشعاع إذا كان بانكه صغيراً، أو الجيب جديد
+                if (tr.bounces <= 1 || !pocketHit[tr.pocketIndex]) {
+                    results.add(tr);
+                    if (tr.bounces <= 1) pocketHit[tr.pocketIndex] = true;
                 }
             }
         }
-        return null;
+        return results;
     }
 
     private static int firstPocket(float px, float py, float dx, float dy,
