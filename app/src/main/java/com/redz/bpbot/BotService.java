@@ -18,7 +18,7 @@ public class BotService extends Service {
         Notification notification = new Notification.Builder(this, "8bp_channel")
                 .setContentTitle("8BP Bot Running")
                 .setContentText("Overlay dan deteksi aktif")
-                .smallIcon(android.R.drawable.ic_menu_compass)
+                .setSmallIcon(android.R.drawable.ic_menu_compass)
                 .build();
         startForeground(1, notification);
 
