@@ -1,4 +1,4 @@
-package com.redz.8bpbot;
+package com.redz.bpbot;
 
 import java.nio.ByteBuffer;
 

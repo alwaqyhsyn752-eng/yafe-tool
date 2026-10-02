@@ -1,4 +1,4 @@
-package com.redz.8bpbot;
+package com.redz.bpbot;
 
 public class ShotPredictor {
     public static float[] calculateBounce(float cueX, float cueY, float targetX, float targetY) {
